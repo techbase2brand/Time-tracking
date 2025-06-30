@@ -47,7 +47,7 @@ const onDrop = (acceptedFiles: File[]) => {
     const ws = wb.Sheets[wb.SheetNames[0]]
 
     // 1) pull the sheet into a 2D array
-    const rows: any[][] = XLSX.utils.sheet_to_json(ws, {
+    const rows = XLSX.utils.sheet_to_json<string[]>(ws, {
       header: 1,
       blankrows: false,
       defval: ''
