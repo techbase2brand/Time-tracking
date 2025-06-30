@@ -36,42 +36,69 @@ export default function Home() {
   const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('')
 
   // Excel file upload handler
-  const onDrop = (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer)
-        const workbook = XLSX.read(data, { type: 'array' })
-        const sheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[sheetName]
-        const jsonData = XLSX.utils.sheet_to_json(worksheet) as Record<string, unknown>[]
+const onDrop = (acceptedFiles: File[]) => {
+  const file = acceptedFiles[0]
+  if (!file) return
 
-        // Log data to check the structure
-        console.log("Excel Data:", jsonData);
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const data = new Uint8Array(e.target?.result as ArrayBuffer)
+    const wb = XLSX.read(data, { type: 'array' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
 
-        // Process the data to match the expected format
-        const processedData: EmployeeRecord[] = jsonData.map((row, index) => {
-          return {
-            id: index + 1,
-            logDate: String(row['Log Date'] || row.LogDate || ''),
-            direction: String(row['Direction'] || row.Direction || ''),
-            employeeCode: String(row['Employee Code'] || row.EmployeeCode || ''),
-            employeeName: String(row['Employee Name'] || row.EmployeeName || ''),
-            company: String(row['Company'] || row.Company || ''),
-            department: String(row['Department'] || row.Department || '')
-          }
-        })
+    // 1) pull the sheet into a 2D array
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, {
+      header: 1,
+      blankrows: false,
+      defval: ''
+    })
 
-        // Log the processed data to check if it's correct
-        console.log("Processed Data:", processedData);
-        
-        setData(processedData)
-        setFilteredData(processedData)
-      }
-      reader.readAsArrayBuffer(file)
+    // 2) find the header row index by looking for "Log Date"
+    const headerRowIndex = rows.findIndex(r =>
+      r.some(cell => typeof cell === 'string' && cell.trim() === 'Log Date')
+    )
+    if (headerRowIndex < 0) {
+      console.error('Could not find a "Log Date" header in the sheet!')
+      return
     }
+
+    // 3) extract the real headers, trimmed
+    const headers: string[] = (rows[headerRowIndex] as string[]).map(h =>
+      typeof h === 'string' ? h.trim() : String(h)
+    )
+
+    // 4) now re-parse the sheet into JSON, telling it to
+    //    – use our trimmed headers
+    //    – skip everything above headerRowIndex
+    //    – fill empty cells with ''
+    const jsonData: Record<string, unknown>[] = XLSX.utils.sheet_to_json(ws, {
+      header: headers,
+      range: headerRowIndex,
+      defval: '',
+    })
+
+    // 5) map into your typed records exactly as before
+    const processedData: EmployeeRecord[] = jsonData.map((row, i) => ({
+      id: i + 1,
+      logDate:      String(row['Log Date']       || ''),
+      direction:    String(row['Direction']      || ''),
+      employeeCode: String(row['Employee Code']  || ''),
+      employeeName: String(row['Employee Name']  || ''),
+      company:      String(row['Company']        || ''),
+      department:   String(row['Department']     || ''),
+    }))
+
+    setData(processedData)
+    setFilteredData(processedData)
+
+    // reset any existing filters
+    setSelectedDate('')
+    setSelectedEmployee('')
+    setSelectedEmployeeCode('')
   }
+  reader.readAsArrayBuffer(file)
+}
+
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -106,17 +133,19 @@ export default function Home() {
   }, [data])
 
   // Calculate time gaps for filtered data
-  const timeGapData = useMemo((): TimeGapData[] => {
-    if (!filteredData.length) return []
+const timeGapData = useMemo((): TimeGapData[] => {
+  if (!filteredData.length) return []
 
-    const groupedByEmployee = filteredData.reduce((acc, record) => {
-      const key = `${record.employeeName}-${record.employeeCode}`
-      if (!acc[key]) {
-        acc[key] = []
-      }
-      acc[key].push(record)
-      return acc
-    }, {} as Record<string, EmployeeRecord[]>)
+  // 1) toss out any row whose employeeCode is not all digits
+  const validRecords = filteredData.filter(r => /^\d+$/.test(r.employeeCode))
+
+  // 2) then group & calculate exactly as before, but on validRecords
+  const groupedByEmployee = validRecords.reduce((acc, record) => {
+    const key = `${record.employeeName}-${record.employeeCode}`
+    if (!acc[key]) acc[key] = []
+    acc[key].push(record)
+    return acc
+  }, {} as Record<string, EmployeeRecord[]>)
 
     return Object.entries(groupedByEmployee).map(([key, records]) => {
       const [employeeName, employeeCode] = key.split('-')
@@ -328,7 +357,7 @@ export default function Home() {
                   <Table className="">
                     <TableHeader className="">
                       <TableRow className="">
-                        <TableHead className="">Employee Name</TableHead>
+                        <TableHead className="">Employee Namesad</TableHead>
                         <TableHead className="">Employee Code</TableHead>
                         <TableHead className="">First Time</TableHead>
                         <TableHead className="">Last Time</TableHead>
