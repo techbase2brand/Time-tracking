@@ -136,96 +136,103 @@ const onDrop = (acceptedFiles: File[]) => {
 const timeGapData = useMemo((): TimeGapData[] => {
   if (!filteredData.length) return []
 
-  // 1) toss out any row whose employeeCode is not all digits
-  const validRecords = filteredData.filter(r => /^\d+$/.test(r.employeeCode))
+  // Filter out records that don't match the selected date
+  const filteredByDate = selectedDate ? filteredData.filter(item => item.logDate.includes(selectedDate)) : filteredData
 
-  // 2) then group & calculate exactly as before, but on validRecords
-  const groupedByEmployee = validRecords.reduce((acc, record) => {
-    const key = `${record.employeeName}-${record.employeeCode}`
+  // Toss out any row whose employeeCode is not all digits
+  const validRecords = filteredByDate.filter(r => /^\d+$/.test(r.employeeCode))
+
+  // Group by employee and date
+  const groupedByEmployeeAndDate = validRecords.reduce((acc, record) => {
+    const key = `${record.employeeName}-${record.employeeCode}-${record.logDate.split(' ')[0]}` // Group by employee and date
     if (!acc[key]) acc[key] = []
     acc[key].push(record)
     return acc
   }, {} as Record<string, EmployeeRecord[]>)
 
-    return Object.entries(groupedByEmployee).map(([key, records]) => {
-      const [employeeName, employeeCode] = key.split('-')
+  return Object.entries(groupedByEmployeeAndDate).map(([key, records]) => {
+    const [employeeName, employeeCode, date] = key.split('-')
 
-      // Sort records by time
-      const sortedRecords = records.sort((a, b) => {
-        const dateA = new Date(a.logDate.replace(/(\d{2})-(\w{3})-(\d{4})/, '$3-$2-$1'))
-        const dateB = new Date(b.logDate.replace(/(\d{2})-(\w{3})-(\d{4})/, '$3-$2-$1'))
-        return dateA.getTime() - dateB.getTime()
-      })
+    // Sort records by logDate for accurate gap calculation
+    const sortedRecords = records.sort((a, b) => {
+      const dateA = new Date(a.logDate.replace(/(\d{2})-(\w{3})-(\d{4})/, '$3-$2-$1'))
+      const dateB = new Date(b.logDate.replace(/(\d{2})-(\w{3})-(\d{4})/, '$3-$2-$1'))
+      return dateA.getTime() - dateB.getTime()
+    })
 
-      if (sortedRecords.length < 2) {
-        return {
-          employeeName,
-          employeeCode,
-          firstTime: sortedRecords[0]?.logDate || '',
-          lastTime: sortedRecords[0]?.logDate || '',
-          totalGap: '0h 0m 0s',
-          recordCount: sortedRecords.length
-        }
-      }
-
-      const firstRecord = sortedRecords[0]
-      const lastRecord = sortedRecords[sortedRecords.length - 1]
-
-      // Parse dates for calculation
-      const parseDateTime = (dateStr: string) => {
-        try {
-          // Convert "25-Jun-2025 11:35:45" to proper date format
-          const [datePart, timePart] = dateStr.split(' ')
-          const [day, month, year] = datePart.split('-')
-          const monthMap: Record<string, string> = {
-            'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
-            'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
-            'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
-          }
-          const formattedDate = `${year}-${monthMap[month]}-${day}T${timePart}`
-          return new Date(formattedDate)
-        } catch {
-          return new Date()
-        }
-      }
-
-      const firstTime = parseDateTime(firstRecord.logDate)
-      const lastTime = parseDateTime(lastRecord.logDate)
-      const diffInSeconds = Math.abs((lastTime.getTime() - firstTime.getTime()) / 1000)
-
-      const hours = Math.floor(diffInSeconds / 3600)
-      const minutes = Math.floor((diffInSeconds % 3600) / 60)
-      const seconds = Math.floor(diffInSeconds % 60)
-
+    // If there's only one record, no time gap can be calculated
+    if (sortedRecords.length < 2) {
       return {
         employeeName,
         employeeCode,
-        firstTime: firstRecord.logDate,
-        lastTime: lastRecord.logDate,
-        totalGap: `${hours}h ${minutes}m ${seconds}s`,
+        firstTime: sortedRecords[0]?.logDate || '',
+        lastTime: sortedRecords[0]?.logDate || '',
+        totalGap: '0h 0m 0s',
         recordCount: sortedRecords.length
       }
-    })
-  }, [filteredData])
+    }
+
+    // Calculate time gap between first and last log entry for the date
+    const firstRecord = sortedRecords[0]
+    const lastRecord = sortedRecords[sortedRecords.length - 1]
+
+    // Parse dates for calculation
+    const parseDateTime = (dateStr: string) => {
+      try {
+        const [datePart, timePart] = dateStr.split(' ')
+        const [day, month, year] = datePart.split('-')
+        const monthMap: Record<string, string> = {
+          'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04',
+          'May': '05', 'Jun': '06', 'Jul': '07', 'Aug': '08',
+          'Sep': '09', 'Oct': '10', 'Nov': '11', 'Dec': '12'
+        }
+        const formattedDate = `${year}-${monthMap[month]}-${day}T${timePart}`
+        return new Date(formattedDate)
+      } catch {
+        return new Date()
+      }
+    }
+
+    const firstTime = parseDateTime(firstRecord.logDate)
+    const lastTime = parseDateTime(lastRecord.logDate)
+    const diffInSeconds = Math.abs((lastTime.getTime() - firstTime.getTime()) / 1000)
+
+    const hours = Math.floor(diffInSeconds / 3600)
+    const minutes = Math.floor((diffInSeconds % 3600) / 60)
+    const seconds = Math.floor(diffInSeconds % 60)
+
+    return {
+      employeeName,
+      employeeCode,
+      firstTime: firstRecord.logDate,
+      lastTime: lastRecord.logDate,
+      totalGap: `${hours}h ${minutes}m ${seconds}s`,
+      recordCount: sortedRecords.length
+    }
+  })
+}, [filteredData, selectedDate])
+
+
 
   // Apply filters
-  const applyFilters = () => {
-    let filtered = data
+const applyFilters = () => {
+  let filtered = data
 
-    if (selectedDate) {
-      filtered = filtered.filter(item => item.logDate.includes(selectedDate))
-    }
-
-    if (selectedEmployee) {
-      filtered = filtered.filter(item => item.employeeName === selectedEmployee)
-    }
-
-    if (selectedEmployeeCode) {
-      filtered = filtered.filter(item => item.employeeCode === selectedEmployeeCode)
-    }
-
-    setFilteredData(filtered)
+  if (selectedDate) {
+    filtered = filtered.filter(item => item.logDate.includes(selectedDate))
   }
+
+  if (selectedEmployee) {
+    filtered = filtered.filter(item => item.employeeName === selectedEmployee)
+  }
+
+  if (selectedEmployeeCode) {
+    filtered = filtered.filter(item => item.employeeCode === selectedEmployeeCode)
+  }
+
+  setFilteredData(filtered)
+}
+
 
   // Clear filters
   const clearFilters = () => {
@@ -357,7 +364,7 @@ const timeGapData = useMemo((): TimeGapData[] => {
                   <Table className="">
                     <TableHeader className="">
                       <TableRow className="">
-                        <TableHead className="">Employee Namesad</TableHead>
+                        <TableHead className="">Employee Name</TableHead>
                         <TableHead className="">Employee Code</TableHead>
                         <TableHead className="">First Time</TableHead>
                         <TableHead className="">Last Time</TableHead>
@@ -383,7 +390,7 @@ const timeGapData = useMemo((): TimeGapData[] => {
             </Card>
 
             {/* Data Table */}
-            <Card className="">
+            {/* <Card className="">
               <CardHeader className="">
                 <CardTitle className="">Employee Log Records ({filteredData.length} records)</CardTitle>
               </CardHeader>
@@ -428,7 +435,7 @@ const timeGapData = useMemo((): TimeGapData[] => {
                   </div>
                 </div>
               </CardContent>
-            </Card>
+            </Card> */}
           </>
         )}
       </div>
