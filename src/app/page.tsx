@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Upload, FileSpreadsheet, Filter, Clock, User, Calendar } from 'lucide-react'
+import {FileSpreadsheet, Filter, Clock, User, Calendar } from 'lucide-react'
 
 interface EmployeeRecord {
   id: number
@@ -151,7 +151,7 @@ const timeGapData = useMemo((): TimeGapData[] => {
   }, {} as Record<string, EmployeeRecord[]>)
 
   return Object.entries(groupedByEmployeeAndDate).map(([key, records]) => {
-    const [employeeName, employeeCode, date] = key.split('-')
+    const [employeeName, employeeCode] = key.split('-')
 
     // Sort records by logDate for accurate gap calculation
     const sortedRecords = records.sort((a, b) => {
